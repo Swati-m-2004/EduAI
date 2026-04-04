@@ -1,0 +1,1 @@
+# Model Syntax Fix TODO\n\n## Current Issue\n- SyntaxError in User.js/Course.js: HTML entities `&#10;` instead of newlines\n- Server crashes on require models\n\n## Steps\n- [ ] 1. Rewrite User.js clean\n- [ ] 2. Rewrite Course.js clean  \n- [ ] 3. npm run dev → verify server starts\n- [ ] 4. Test auth endpoints\n- [ ] 5. attempt_completion\n

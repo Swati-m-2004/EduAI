@@ -1,0 +1,145 @@
+/* ══════════════════════════════════════
+   BUTTON COMPONENT STYLES
+══════════════════════════════════════ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── SIZES ── */
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 12px;
+}
+
+.btn-md {
+  padding: 12px 24px;
+  font-size: 14px;
+}
+
+.btn-lg {
+  padding: 16px 32px;
+  font-size: 16px;
+}
+
+/* ── VARIANTS ── */
+.btn-primary {
+  background: linear-gradient(135deg, #7B6EF6, #00E5C3);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(123, 110, 246, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(123, 110, 246, 0.4);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Ripple effect */
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.btn-primary:active::after {
+  animation: ripple 0.6s ease-out;
+}
+
+@keyframes ripple {
+  to {
+    width: 300px;
+    height: 300px;
+    opacity: 0;
+  }
+}
+
+.btn-outline {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--t2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--p);
+  color: var(--t1);
+  transform: translateY(-2px);
+}
+
+.btn-secondary {
+  background: rgba(123, 110, 246, 0.15);
+  color: var(--p);
+  border: 1px solid rgba(123, 110, 246, 0.25);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(123, 110, 246, 0.25);
+  transform: translateY(-2px);
+}
+
+/* ── STATES ── */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn.full-width {
+  width: 100%;
+}
+
+.btn.loading {
+  pointer-events: none;
+}
+
+.btn-icon {
+  font-size: 18px;
+}
+
+/* ── LOADER ── */
+.loader {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Glow effect on focus */
+.btn-primary:focus-visible {
+  box-shadow: 0 0 0 3px rgba(123, 110, 246, 0.5);
+}
+
+.btn-outline:focus-visible {
+  box-shadow: 0 0 0 3px rgba(123, 110, 246, 0.3);
+}

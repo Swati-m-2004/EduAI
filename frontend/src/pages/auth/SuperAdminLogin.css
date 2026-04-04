@@ -1,0 +1,361 @@
+/* ══════════════════════════════════════
+   SUPER ADMIN LOGIN PAGE STYLES
+══════════════════════════════════════ */
+
+.super-admin-login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  padding: 40px 24px;
+}
+
+.super-admin-login-container.dark {
+  --bg: #05050F;
+  --bg2: #0D0D1F;
+  --t1: #F0EFFF;
+  --t2: #8B8AA8;
+  --p: #7B6EF6;
+  --s: #00E5C3;
+  --warn: #FFD166;
+  --danger: #FF6B6B;
+}
+
+.super-admin-login-container.light {
+  --bg: #FFFFFF;
+  --bg2: #F5F5F5;
+  --t1: #000000;
+  --t2: #666666;
+  --p: #7B6EF6;
+  --s: #00E5C3;
+  --warn: #FFD166;
+  --danger: #FF6B6B;
+}
+
+/* Background Orbs - Premium Effect */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  pointer-events: none;
+}
+
+.orb-1 {
+  width: 700px;
+  height: 700px;
+  top: -150px;
+  left: -200px;
+  background: rgba(255, 209, 102, 0.1);
+  animation: float1 10s ease-in-out infinite alternate;
+}
+
+.orb-2 {
+  width: 500px;
+  height: 500px;
+  bottom: -100px;
+  right: -150px;
+  background: rgba(255, 107, 107, 0.08);
+  animation: float2 8s ease-in-out infinite alternate;
+}
+
+@keyframes float1 {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50px);
+  }
+}
+
+@keyframes float2 {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(40px);
+  }
+}
+
+/* Theme Toggle */
+.theme-toggle {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: scale(1.05);
+}
+
+/* Super Admin Wrapper */
+.super-admin-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 48px;
+  max-width: 500px;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/* Main Form Container */
+.super-admin-form-container {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 209, 102, 0.2);
+  border-radius: 24px;
+  padding: 48px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 0 40px rgba(255, 209, 102, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.super-admin-form-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 209, 102, 0.05) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+/* Admin Badge */
+.admin-badge {
+  font-size: 64px;
+  text-align: center;
+  margin-bottom: 24px;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    text-shadow: 0 0 20px rgba(255, 209, 102, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    text-shadow: 0 0 40px rgba(255, 209, 102, 0.6);
+    transform: scale(1.05);
+  }
+}
+
+/* Form Header */
+.form-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.form-header h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--t1);
+}
+
+.form-header p {
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Access Level Indicator */
+.access-level {
+  margin-bottom: 32px;
+}
+
+.level-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 209, 102, 0.08);
+  border: 1.5px solid rgba(255, 209, 102, 0.2);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--t2);
+  font-weight: 600;
+}
+
+.level-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--warn);
+  border-radius: 50%;
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Super Admin Form */
+.super-admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Info Box */
+.info-box {
+  background: rgba(255, 209, 102, 0.06);
+  border: 1px solid rgba(255, 209, 102, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 24px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--t2);
+}
+
+.info-box p {
+  margin: 6px 0;
+}
+
+.info-box p:first-child::before {
+  content: '';
+}
+
+/* Form Footer */
+.form-footer {
+  text-align: center;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.back-link {
+  background: none;
+  border: none;
+  color: var(--t2);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.back-link:hover {
+  color: var(--p);
+  transform: translateX(-4px);
+}
+
+/* Security Cards */
+.security-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  width: 100%;
+  max-width: 500px;
+}
+
+.security-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 209, 102, 0.15);
+  border-radius: 16px;
+  padding: 24px 16px;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  cursor: default;
+}
+
+.security-card:hover {
+  border-color: rgba(255, 209, 102, 0.3);
+  background: rgba(255, 209, 102, 0.04);
+  transform: translateY(-4px);
+}
+
+.card-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  display: inline-block;
+}
+
+.security-card h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--t1);
+}
+
+.security-card p {
+  font-size: 11px;
+  color: var(--t2);
+}
+
+/* Particles */
+.particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.particle {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  background: var(--warn);
+  border-radius: 50%;
+  opacity: 0.15;
+  animation: particleFloat var(--dur) ease-in-out infinite var(--del);
+}
+
+@keyframes particleFloat {
+  0%, 100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-40px) translateX(15px);
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .super-admin-form-container {
+    padding: 32px 24px;
+  }
+
+  .form-header h1 {
+    font-size: 24px;
+  }
+
+  .admin-badge {
+    font-size: 48px;
+  }
+
+  .security-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .theme-toggle {
+    top: 16px;
+    right: 16px;
+    width: 40px;
+    height: 40px;
+  }
+}
