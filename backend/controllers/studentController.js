@@ -220,6 +220,9 @@ const buildPaymentPayload = (course, razorpayOrder) => {
   };
 };
 
+const getTopicTitleFromCourse = (course, topicId) =>
+  course?.topics?.find((topic) => String(topic._id) === String(topicId))?.title || 'Topic';
+
 const buildReceiptId = (courseId, userId) => {
   const shortCourseId = String(courseId || '').slice(-8);
   const shortUserId = String(userId || '').slice(-8);
@@ -228,17 +231,71 @@ const buildReceiptId = (courseId, userId) => {
   return `edu_${shortCourseId}_${shortUserId}_${timestamp}`.slice(0, 40);
 };
 
-const buildLeaderboard = async (studentId) => {
-  const students = await User.find({ role: 'student', isActive: true })
-    .select('name performanceScore')
-    .sort({ performanceScore: -1, createdAt: 1 })
-    .limit(8)
+const syncStudentPerformanceScore = async (studentId) => {
+  const enrollments = await Enrollment.find({ student: studentId })
+    .select('quizResults')
     .lean();
 
-  return students.map((student, index) => ({
+  const allScores = enrollments.flatMap((enrollment) =>
+    (enrollment.quizResults || []).map((result) => Number(result.score || 0))
+  );
+
+  const performanceScore = allScores.length
+    ? Math.round(allScores.reduce((sum, score) => sum + score, 0) / allScores.length)
+    : 0;
+
+  await User.findByIdAndUpdate(studentId, { performanceScore });
+
+  return performanceScore;
+};
+
+const buildLeaderboard = async (studentId) => {
+  const students = await User.find({ role: 'student', isActive: true })
+    .select('name createdAt')
+    .lean();
+
+  const enrollments = await Enrollment.find({
+    student: { $in: students.map((student) => student._id) },
+  })
+    .select('student quizResults')
+    .lean();
+
+  const scoreMap = new Map();
+
+  students.forEach((student) => {
+    scoreMap.set(String(student._id), []);
+  });
+
+  enrollments.forEach((enrollment) => {
+    const key = String(enrollment.student);
+    const scores = (enrollment.quizResults || []).map((result) => Number(result.score || 0));
+    scoreMap.set(key, [...(scoreMap.get(key) || []), ...scores]);
+  });
+
+  const rankedStudents = students
+    .map((student) => {
+      const scores = scoreMap.get(String(student._id)) || [];
+      const averageScore = scores.length
+        ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+        : 0;
+
+      return {
+        _id: student._id,
+        name: student.name,
+        score: averageScore,
+        createdAt: student.createdAt,
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+    })
+    .slice(0, 8);
+
+  return rankedStudents.map((student, index) => ({
     _id: student._id,
     name: student.name,
-    score: student.performanceScore || 0,
+    score: student.score || 0,
     rank: index + 1,
     isCurrentUser: String(student._id) === String(studentId),
   }));
@@ -293,6 +350,7 @@ const calculatePerformanceMetrics = (enrollments, courses) => {
     }
 
     const courseResults = enrollment.quizResults;
+    const topicTitleMap = new Map((course?.topics || []).map((topic) => [String(topic._id), topic.title || 'Topic']));
     const courseScores = courseResults.map((r) => r.score || 0);
     const courseAvg = courseScores.reduce((a, b) => a + b, 0) / courseScores.length;
 
@@ -312,7 +370,7 @@ const calculatePerformanceMetrics = (enrollments, courses) => {
 
       if (!topicPerformanceMap.has(topicId)) {
         topicPerformanceMap.set(topicId, {
-          topicTitle: result.topicTitle || 'Topic',
+          topicTitle: topicTitleMap.get(topicId) || result.topicTitle || 'Topic',
           scores: [],
           attempts: 0,
         });
@@ -329,7 +387,7 @@ const calculatePerformanceMetrics = (enrollments, courses) => {
       timelineData.push({
         date: new Date(result.completedAt),
         score,
-        topicTitle: result.topicTitle || 'Quiz',
+        topicTitle: topicTitleMap.get(topicId) || result.topicTitle || 'Quiz',
         difficulty: result.highestDifficultyReached || 'easy',
       });
     });
@@ -851,6 +909,8 @@ exports.saveQuizResult = async (req, res) => {
       totalQuestions,
       highestDifficultyReached,
       batchScores,
+      timeTakenSeconds,
+      source,
     } = req.body;
 
     if (!courseId || !topicId) {
@@ -865,6 +925,8 @@ exports.saveQuizResult = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
 
+    const topicTitle = getTopicTitleFromCourse(course, topicId);
+
     const enrollment = await Enrollment.findOne({ student: req.userId, course: courseId });
     if (!enrollment) {
       return res.status(404).json({ success: false, message: 'Enrollment not found' });
@@ -873,12 +935,15 @@ exports.saveQuizResult = async (req, res) => {
     // Add quiz result
     enrollment.quizResults.push({
       topicId,
+      topicTitle,
       quizTitle: quizTitle || 'Quiz',
       score: Math.round(score) || 0,
       scoreOutOfTen: scoreOutOfTen || 0,
       correctCount: correctCount || 0,
       totalQuestions: totalQuestions || 10,
       highestDifficultyReached: highestDifficultyReached || 'easy',
+      timeTakenSeconds: Number(timeTakenSeconds) > 0 ? Number(timeTakenSeconds) : 0,
+      source: source?.trim?.() || 'quiz',
       batchScores: Array.isArray(batchScores) ? batchScores : [],
       completedAt: new Date(),
     });
@@ -894,6 +959,7 @@ exports.saveQuizResult = async (req, res) => {
 
     enrollment.lastAccessedAt = new Date();
     await enrollment.save();
+    await syncStudentPerformanceScore(req.userId);
 
     res.status(201).json({
       success: true,

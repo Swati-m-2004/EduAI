@@ -129,8 +129,35 @@ const calculatePercentage = (correct, attempts) => (
   attempts ? Math.round((correct / attempts) * 100) : 0
 );
 
-function QuizResults({ performanceData, courseId, topicId, onQuit }) {
-  const { score, scoreOutOfTen, correctCount, totalQuestions, highestDifficulty, easyScore, mediumScore, hardScore, batchScores } = performanceData;
+const getAdaptiveDifficultyFromScore = (percentage = 0) => {
+  if (percentage < 50) return 'easy';
+  if (percentage <= 80) return 'medium';
+  return 'hard';
+};
+
+const getNextQuestionId = (questions, usedIds, targetDifficulty) => {
+  const remaining = questions.filter((question) => !usedIds.includes(question._adaptiveId));
+  if (!remaining.length) return '';
+
+  const exact = remaining.find((question) => question.difficulty === targetDifficulty);
+  if (exact) return exact._adaptiveId;
+
+  const fallbackOrder = targetDifficulty === 'hard'
+    ? ['medium', 'easy']
+    : targetDifficulty === 'medium'
+      ? ['easy', 'hard']
+      : ['medium', 'hard'];
+
+  for (const difficulty of fallbackOrder) {
+    const match = remaining.find((question) => question.difficulty === difficulty);
+    if (match) return match._adaptiveId;
+  }
+
+  return remaining[0]?._adaptiveId || '';
+};
+
+function QuizResults({ performanceData, courseId, topicId, onQuit, onSaved }) {
+  const { score, scoreOutOfTen, correctCount, totalQuestions, highestDifficulty, easyScore, mediumScore, hardScore, batchScores, timeTakenSeconds, source } = performanceData;
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -143,14 +170,17 @@ function QuizResults({ performanceData, courseId, topicId, onQuit }) {
       try {
         await studentAPI.saveQuizResult(courseId, {
           topicId,
-          quizTitle: 'Adaptive Quiz',
+          quizTitle: source === 'ai_notes' ? 'AI Adaptive Quiz' : 'Adaptive Quiz',
           score,
           scoreOutOfTen,
           correctCount,
           totalQuestions,
           highestDifficultyReached: highestDifficulty,
           batchScores: Array.isArray(batchScores) ? batchScores : [],
+          timeTakenSeconds,
+          source,
         });
+        onSaved?.(performanceData);
       } catch (error) {
         if (active) {
           Swal.fire({
@@ -172,7 +202,7 @@ function QuizResults({ performanceData, courseId, topicId, onQuit }) {
     return () => {
       active = false;
     };
-  }, [batchScores, correctCount, courseId, highestDifficulty, score, scoreOutOfTen, topicId, totalQuestions]);
+  }, [batchScores, correctCount, courseId, highestDifficulty, onSaved, performanceData, score, scoreOutOfTen, source, timeTakenSeconds, topicId, totalQuestions]);
 
   const getPerformanceFeedback = (percentage) => {
     if (percentage >= 90) return { message: 'Outstanding work. You mastered this adaptive round very confidently.', color: '#10b981' };
@@ -293,13 +323,14 @@ function QuizResults({ performanceData, courseId, topicId, onQuit }) {
 
 export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, onComplete, onQuit }) {
   const questions = useMemo(
-    () => (quiz?.questions || []).map((question, index) => ({
+    () => (quiz?.questions || []).slice(0, 10).map((question, index) => ({
       ...question,
       _adaptiveId: getQuestionId(question, index),
       difficulty: DIFFICULTY_ORDER.includes(question.difficulty) ? question.difficulty : 'easy',
       type: question.type || 'mcq',
+      prompt: question.prompt || `${topic?.title || 'Topic'} question ${index + 1}`,
     })),
-    [quiz]
+    [quiz, topic?.title]
   );
 
   const questionMap = useMemo(
@@ -308,9 +339,9 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
   );
 
   const totalUniqueQuestions = questions.length;
-  const [queueByDifficulty, setQueueByDifficulty] = useState(() => getInitialQueues(questions));
-  const [currentDifficulty, setCurrentDifficulty] = useState(() => getFirstAvailableDifficulty(getInitialQueues(questions)));
+  const [currentDifficulty, setCurrentDifficulty] = useState('easy');
   const [currentQuestionId, setCurrentQuestionId] = useState('');
+  const [usedQuestionIds, setUsedQuestionIds] = useState([]);
   const [answers, setAnswers] = useState({});
   const [fillAnswers, setFillAnswers] = useState({});
   const [matchAnswers, setMatchAnswers] = useState({});
@@ -318,23 +349,22 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
   const [revealed, setRevealed] = useState(false);
   const [isCorrectAnswer, setIsCorrectAnswer] = useState(null);
   const [feedback, setFeedback] = useState('');
-  const [stepCount, setStepCount] = useState(0);
   const [attemptCount, setAttemptCount] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
-  const [masteredIds, setMasteredIds] = useState([]);
   const [highestDifficulty, setHighestDifficulty] = useState('easy');
   const [levelStats, setLevelStats] = useState(createEmptyLevelStats());
   const [attemptHistory, setAttemptHistory] = useState([]);
   const [batchScores, setBatchScores] = useState([]);
   const [performanceData, setPerformanceData] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(20);
+  const [sessionTimeSeconds, setSessionTimeSeconds] = useState(0);
 
   useEffect(() => {
-    const initialQueues = getInitialQueues(questions);
-    const initialDifficulty = getFirstAvailableDifficulty(initialQueues);
+    const firstQuestionId = getNextQuestionId(questions, [], 'easy');
 
-    setQueueByDifficulty(initialQueues);
-    setCurrentDifficulty(initialDifficulty);
-    setCurrentQuestionId(initialQueues[initialDifficulty]?.[0] || '');
+    setCurrentDifficulty('easy');
+    setCurrentQuestionId(firstQuestionId);
+    setUsedQuestionIds(firstQuestionId ? [firstQuestionId] : []);
     setAnswers({});
     setFillAnswers({});
     setMatchAnswers({});
@@ -342,15 +372,15 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
     setRevealed(false);
     setIsCorrectAnswer(null);
     setFeedback('');
-    setStepCount(0);
     setAttemptCount(0);
     setCorrectCount(0);
-    setMasteredIds([]);
-    setHighestDifficulty(initialDifficulty);
+    setHighestDifficulty('easy');
     setLevelStats(createEmptyLevelStats());
     setAttemptHistory([]);
     setBatchScores([]);
     setPerformanceData(null);
+    setTimeLeft(20);
+    setSessionTimeSeconds(0);
   }, [questions]);
 
   const currentQuestion = currentQuestionId ? questionMap.get(currentQuestionId) || null : null;
@@ -374,7 +404,31 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
     setRevealed(false);
     setIsCorrectAnswer(null);
     setFeedback('');
+    setTimeLeft(20);
   }, [currentQuestionId, currentQuestion?._adaptiveId, activeDragItems]);
+
+  useEffect(() => {
+    if (!currentQuestion || performanceData || revealed) return undefined;
+
+    const interval = window.setInterval(() => {
+      setTimeLeft((current) => {
+        if (current <= 1) {
+          window.clearInterval(interval);
+          return 0;
+        }
+        return current - 1;
+      });
+      setSessionTimeSeconds((current) => current + 1);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [currentQuestion, performanceData, revealed]);
+
+  useEffect(() => {
+    if (timeLeft === 0 && currentQuestion && !revealed && !performanceData) {
+      handleSubmit(true);
+    }
+  }, [timeLeft, currentQuestion, revealed, performanceData]);
 
   const finishQuiz = (nextCorrectCount, nextAttemptCount, nextLevelStats, nextBatchScores, nextHighestDifficulty) => {
     const score = calculatePercentage(nextCorrectCount, nextAttemptCount);
@@ -391,11 +445,12 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
       hardScore: calculatePercentage(nextLevelStats.hard.correct, nextLevelStats.hard.attempts),
       topic: topic?.title || 'Quiz',
       course: course?.title || 'Course',
+      timeTakenSeconds: sessionTimeSeconds,
+      source: quiz?.source || 'adaptive',
       timestamp: new Date().toISOString(),
     };
 
     setPerformanceData(data);
-    onComplete?.(data);
   };
 
   const evaluateAnswer = () => {
@@ -442,17 +497,13 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
     }));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (forcedTimeout = false) => {
     if (!currentQuestion || revealed) return;
 
     const isCorrect = evaluateAnswer();
     const currentQuestionDifficulty = currentQuestion.difficulty || currentDifficulty;
     const nextAttemptCount = attemptCount + 1;
     const nextCorrectCount = isCorrect ? correctCount + 1 : correctCount;
-    const alreadyMastered = masteredIds.includes(currentQuestion._adaptiveId);
-    const nextMasteredIds = isCorrect && !alreadyMastered
-      ? [...masteredIds, currentQuestion._adaptiveId]
-      : masteredIds;
 
     const nextLevelStats = {
       ...levelStats,
@@ -460,7 +511,7 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
         ...levelStats[currentQuestionDifficulty],
         attempts: levelStats[currentQuestionDifficulty].attempts + 1,
         correct: levelStats[currentQuestionDifficulty].correct + (isCorrect ? 1 : 0),
-        mastered: levelStats[currentQuestionDifficulty].mastered + (isCorrect && !alreadyMastered ? 1 : 0),
+        mastered: levelStats[currentQuestionDifficulty].mastered + (isCorrect ? 1 : 0),
       },
     };
 
@@ -473,60 +524,44 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
 
     setAttemptCount(nextAttemptCount);
     setCorrectCount(nextCorrectCount);
-    setMasteredIds(nextMasteredIds);
     setLevelStats(nextLevelStats);
     setAttemptHistory(nextAttemptHistory);
     setBatchScores(nextBatchScores);
     setIsCorrectAnswer(isCorrect);
     setRevealed(true);
     setFeedback(
-      isCorrect
-        ? 'Correct. Stay sharp, and the quiz will move you forward when this level is mastered.'
-        : 'Not quite. You will keep working on this level until the remaining questions are mastered.'
+      forcedTimeout
+        ? 'Time is up. Moving to the next adaptive question.'
+        : isCorrect
+          ? 'Correct. The next question will adapt from your current score.'
+          : 'Not quite. The next question will adjust to your current level.'
     );
 
-    const updatedQueues = {
-      easy: [...queueByDifficulty.easy],
-      medium: [...queueByDifficulty.medium],
-      hard: [...queueByDifficulty.hard],
-    };
-
-    updatedQueues[currentQuestionDifficulty] = updatedQueues[currentQuestionDifficulty]
-      .filter((questionId) => questionId !== currentQuestion._adaptiveId);
-
-    if (!isCorrect) {
-      updatedQueues[currentQuestionDifficulty].push(currentQuestion._adaptiveId);
-    }
-
-    setQueueByDifficulty(updatedQueues);
-
-    const nextDifficulty = updatedQueues[currentQuestionDifficulty].length
-      ? currentQuestionDifficulty
-      : getNextAvailableDifficulty(updatedQueues, currentQuestionDifficulty);
-
-    const nextHighestDifficulty = nextDifficulty && DIFFICULTY_ORDER.indexOf(nextDifficulty) > DIFFICULTY_ORDER.indexOf(highestDifficulty)
+    const nextPercentage = calculatePercentage(nextCorrectCount, nextAttemptCount);
+    const nextDifficulty = getAdaptiveDifficultyFromScore(nextPercentage);
+    const nextHighestDifficulty = DIFFICULTY_ORDER.indexOf(nextDifficulty) > DIFFICULTY_ORDER.indexOf(highestDifficulty)
       ? nextDifficulty
       : highestDifficulty;
 
     setHighestDifficulty(nextHighestDifficulty);
+    setCurrentDifficulty(nextDifficulty);
 
-    if (!nextDifficulty) {
+    if (nextAttemptCount >= totalUniqueQuestions) {
       finishQuiz(nextCorrectCount, nextAttemptCount, nextLevelStats, nextBatchScores, nextHighestDifficulty);
+      return;
     }
   };
 
   const handleNext = () => {
     if (!revealed || !currentQuestion) return;
+    const nextQuestionId = getNextQuestionId(questions, usedQuestionIds, currentDifficulty);
+    if (!nextQuestionId) {
+      finishQuiz(correctCount, attemptCount, levelStats, batchScores, highestDifficulty);
+      return;
+    }
 
-    const nextDifficulty = queueByDifficulty[currentDifficulty]?.length
-      ? currentDifficulty
-      : getNextAvailableDifficulty(queueByDifficulty, currentDifficulty);
-
-    if (!nextDifficulty) return;
-
-    setCurrentDifficulty(nextDifficulty);
-    setCurrentQuestionId(queueByDifficulty[nextDifficulty][0] || '');
-    setStepCount((current) => current + 1);
+    setCurrentQuestionId(nextQuestionId);
+    setUsedQuestionIds((current) => [...current, nextQuestionId]);
   };
 
   const moveDragItem = (index, direction) => {
@@ -542,7 +577,7 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
   };
 
   if (performanceData) {
-    return <QuizResults performanceData={performanceData} courseId={courseId} topicId={topicId} onQuit={onQuit} />;
+    return <QuizResults performanceData={performanceData} courseId={courseId} topicId={topicId} onQuit={onQuit} onSaved={onComplete} />;
   }
 
   if (!currentQuestion) {
@@ -566,7 +601,8 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
             <span className="difficulty-badge" style={{ backgroundColor: DIFFICULTY_LEVELS[currentDifficulty].color }}>
               {DIFFICULTY_LEVELS[currentDifficulty].emoji} {DIFFICULTY_LEVELS[currentDifficulty].label}
             </span>
-            <span className="progress-text">Mastered {masteredIds.length} of {totalUniqueQuestions}</span>
+            <span className="progress-text">Question {attemptCount + 1} of {totalUniqueQuestions}</span>
+            <span className="progress-text">Time left: {timeLeft}s</span>
           </div>
         </div>
         <button className="quit-btn" onClick={onQuit}>
@@ -577,7 +613,7 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
       <div className="quiz-progress-bar">
         <div
           className="progress-fill"
-          style={{ width: `${totalUniqueQuestions ? (masteredIds.length / totalUniqueQuestions) * 100 : 0}%` }}
+          style={{ width: `${totalUniqueQuestions ? (attemptCount / totalUniqueQuestions) * 100 : 0}%` }}
         />
       </div>
 
@@ -596,18 +632,29 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
         <div className="question-content">
           {currentQuestion.type === 'mcq' ? (
             <div className="options-list">
-              {(currentQuestion.options || []).map((option, index) => (
-                <label key={`${currentQuestion._adaptiveId}-option-${index}`} className="option-label">
-                  <input
-                    type="radio"
-                    name={`question-${currentQuestion._adaptiveId}`}
-                    value={option}
-                    checked={answers[currentQuestion._adaptiveId]?.answer === option}
-                    onChange={(event) => handleChoiceAnswer(event.target.value)}
-                  />
-                  <span className="option-text">{option}</span>
-                </label>
-              ))}
+              {(currentQuestion.options || []).map((option, index) => {
+                const selectedValue = answers[currentQuestion._adaptiveId]?.answer;
+                const isSelected = selectedValue === option;
+                const isCorrectOption = normalizeValue(option) === normalizeValue(currentQuestion.answer);
+                const isWrongSelection = revealed && isSelected && !isCorrectOption;
+
+                return (
+                  <label
+                    key={`${currentQuestion._adaptiveId}-option-${index}`}
+                    className={`option-label ${revealed && isCorrectOption ? 'correct' : ''} ${isWrongSelection ? 'incorrect' : ''} ${isSelected ? 'selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name={`question-${currentQuestion._adaptiveId}`}
+                      value={option}
+                      checked={isSelected}
+                      disabled={revealed}
+                      onChange={(event) => handleChoiceAnswer(event.target.value)}
+                    />
+                    <span className="option-text">{option}</span>
+                  </label>
+                );
+              })}
             </div>
           ) : null}
 
@@ -697,7 +744,7 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
             </button>
           ) : (
             <button className="next-btn primary-btn-clean" onClick={handleNext}>
-              {queueByDifficulty[currentDifficulty]?.length ? 'Next Question' : 'Move to Next Level'} <FiChevronRight />
+              Next Question <FiChevronRight />
             </button>
           )}
         </div>
@@ -705,6 +752,46 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
         {feedback ? (
           <div className={`practice-feedback-chip ${isCorrectAnswer === true ? 'success' : ''} ${isCorrectAnswer === false ? 'error' : ''}`}>
             {feedback}
+          </div>
+        ) : null}
+
+        {revealed ? (
+          <div className="adaptive-answer-review">
+            <strong>Answer Review</strong>
+            {currentQuestion.type === 'mcq' ? (
+              <p>Correct answer: {currentQuestion.answer || 'No answer available.'}</p>
+            ) : null}
+            {currentQuestion.type === 'fill_blank' ? (
+              <div className="adaptive-answer-list">
+                {activeBlankSets.map((blank, index) => (
+                  <p key={blank.id}>Blank {index + 1}: {blank.answers.join(', ') || 'No answer available'}</p>
+                ))}
+              </div>
+            ) : null}
+            {currentQuestion.type === 'match' ? (
+              <div className="adaptive-answer-list">
+                {activeMatchParts.pairs.map((pair, index) => {
+                  const left = activeMatchParts.leftItems.find((item) => item.id === pair.leftId);
+                  const right = activeMatchParts.rightItems.find((item) => item.id === pair.rightId);
+                  return (
+                    <p key={`${pair.leftId}-${pair.rightId}`}>
+                      {index + 1}. {left?.text || 'Term'} {'->'} {right?.text || 'Definition'}
+                    </p>
+                  );
+                })}
+              </div>
+            ) : null}
+            {currentQuestion.type === 'drag_drop' ? (
+              <div className="adaptive-answer-list">
+                {String(currentQuestion.answer || '')
+                  .split('|')
+                  .map((item) => item.trim())
+                  .filter(Boolean)
+                  .map((item, index) => (
+                    <p key={`${item}-${index}`}>{index + 1}. {item}</p>
+                  ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </motion.div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FiArrowDown, FiArrowUp } from 'react-icons/fi';
 import SectionHeader from './SectionHeader';
 import AdaptiveQuiz from './AdaptiveQuiz';
+import { generateAdaptiveQuizFromNotes } from './adaptiveQuestionGenerator';
 
 const TYPE_LABELS = {
   mcq: 'MCQ',
@@ -164,17 +165,14 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
   const [useAdaptiveMode, setUseAdaptiveMode] = useState(false);
 
   const questions = useMemo(() => getQuestionPool(topic), [topic]);
-  const allQuestionsForAdaptive = useMemo(() => (
-    (topic?.quizzes || []).flatMap((quiz) =>
-      (quiz.questions || []).map((question) => ({
-        ...question,
-        quizId: quiz._id,
-        quizTitle: quiz.title,
-        difficulty: question.difficulty || 'easy',
-        type: question.type || 'mcq',
-      }))
-    )
-  ), [topic]);
+  const generatedAdaptiveQuiz = useMemo(
+    () => generateAdaptiveQuizFromNotes({
+      topicTitle: topic?.title || 'Topic',
+      notesContent: topic?.notesContent || '',
+      fallbackText: topic?.description || '',
+    }),
+    [topic?.title, topic?.notesContent, topic?.description]
+  );
   const targetQuestionCount = useMemo(
     () => getTargetQuestionCount(baselinePerformance, questions.length),
     [baselinePerformance, questions.length]
@@ -338,22 +336,22 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
     });
   };
 
-  if (!topic?.quizzes?.length) {
+  if (!topic?.quizzes?.length && !generatedAdaptiveQuiz.questions.length) {
     return (
       <div className="quiz-inline-shell">
-        <SectionHeader title="Adaptive Topic Quiz" subtitle="Quizzes will appear here after the instructor publishes them." />
-        <div className="empty-state-box">No quiz has been published for this topic yet.</div>
+        <SectionHeader title="Adaptive Topic Quiz" subtitle="Adaptive practice is generated from notes, and practice mode uses instructor quizzes." />
+        <div className="empty-state-box">Add topic notes or publish a quiz to start practicing this topic.</div>
       </div>
     );
   }
 
   // PRIMARY: Show adaptive quiz if available and enough questions (even on first load)
-  if (allQuestionsForAdaptive.length >= 10) {
+  if (generatedAdaptiveQuiz.questions.length >= 10) {
     if (useAdaptiveMode) {
       return (
         <div className="quiz-inline-shell">
           <AdaptiveQuiz
-            quiz={{ questions: allQuestionsForAdaptive, title: `${topic.title} - Adaptive Quiz` }}
+            quiz={generatedAdaptiveQuiz}
             topic={topic}
             courseId={courseId}
             topicId={topic._id}
@@ -377,15 +375,18 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
     // Show adaptive quiz interface when not in quiz yet
     return (
       <div className="quiz-inline-shell">
-        <SectionHeader 
-          title="🎯 Adaptive Topic Quiz - Recommended"
-          subtitle="10 adaptive questions that adjust difficulty based on your answers. Recommended for best learning!"
+        <SectionHeader
+          title="Adaptive Topic Quiz"
+          subtitle="AI-generated from the topic notes with mixed question types and adaptive difficulty."
         />
-        
+
         <div style={{ marginBottom: '24px', padding: '20px', backgroundColor: '#f0fdfa', borderRadius: '12px', borderLeft: '4px solid #14b8a6' }}>
-          <h4 style={{ marginTop: 0, color: '#0f172a' }}>✨ Try the New Adaptive Quiz</h4>
+          <h4 style={{ marginTop: 0, color: '#0f172a' }}>Try the AI Adaptive Quiz</h4>
           <p style={{ margin: '8px 0', color: '#1e293b' }}>
-            This quiz keeps you on the current level until the remaining questions there are mastered, then unlocks the next level from Easy to Medium to Hard.
+            This adaptive quiz is generated from the instructor notes, mixes MCQ, fill-in-the-blank, match, and drag-drop questions, starts at Easy, and adjusts to Medium or Hard from your live score.
+          </p>
+          <p style={{ margin: '8px 0', color: '#475569', fontSize: '14px' }}>
+            Instructor-added quiz questions still stay available below in the traditional practice area.
           </p>
           <button 
             className="primary-btn-clean" 
@@ -403,7 +404,7 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
           </p>
           
           {!activeQuestion ? (
-            <div className="empty-state-box">Loading traditional quiz questions...</div>
+            <div className="empty-state-box">No instructor practice quiz is published for this topic yet. You can still take the AI adaptive quiz above.</div>
           ) : (
             <>
               <div className="practice-player-head compact">
@@ -606,12 +607,11 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
   // Fallback: No sufficient questions for adaptive
   return (
     <div className="quiz-inline-shell">
-      <SectionHeader title="Adaptive Topic Quiz" subtitle="Need at least 10 questions with assigned difficulty levels." />
+      <SectionHeader title="Adaptive Topic Quiz" subtitle="AI adaptive questions are generated from topic notes." />
       <div className="empty-state-box">
-        {topic?.quizzes?.length 
-          ? "Instructor needs to assign difficulty levels (Easy/Medium/Hard) to at least 10 questions to enable adaptive mode."
-          : "No quiz has been published for this topic yet."
-        }
+        {topic?.notesContent || topic?.description
+          ? 'We could not generate enough adaptive questions from these notes yet. Add richer notes or topic content to unlock AI adaptive practice.'
+          : 'Instructor notes are required before the AI adaptive quiz can be generated for this topic.'}
       </div>
     </div>
   );

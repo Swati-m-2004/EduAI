@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
 import { FiActivity, FiArrowLeft, FiBarChart2, FiBookOpen, FiChevronRight, FiExternalLink, FiFileText, FiGrid, FiLayers, FiPaperclip, FiPlus, FiSearch, FiSettings, FiTrendingUp, FiTrash2, FiUsers, FiVideo, FiX } from 'react-icons/fi';
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { authAPI, instructorAPI } from '../../services/api';
 import { useThemeStore } from '../../store/themeStore';
 import DashboardSidebar from '../../components/dashboard/DashboardSidebar';
@@ -130,6 +130,121 @@ const buildBlankPreviewFromBackend = (question) => {
     preview = preview.replace(token, `_____ ${index + 1}`);
   });
   return preview;
+};
+
+const getStudentCourseForPerformance = (student, selectedCourseId = '') => {
+  const enrolledCourses = Array.isArray(student?.enrolledCourseDetails)
+    ? student.enrolledCourseDetails.filter((course) => course?._id)
+    : [];
+
+  if (!enrolledCourses.length) return null;
+
+  const selectedCourse = enrolledCourses.find((course) => String(course._id) === String(selectedCourseId));
+  if (selectedCourse?.quizAttempts) {
+    return selectedCourse;
+  }
+
+  return enrolledCourses.find((course) => (course.quizAttempts || 0) > 0)
+    || selectedCourse
+    || enrolledCourses[0];
+};
+
+const toPreviewItems = (items = []) =>
+  (Array.isArray(items) ? items : [])
+    .map((item, index) => {
+      if (typeof item === 'string') {
+        return { id: `${index}-${item}`, text: item };
+      }
+
+      if (item && typeof item === 'object') {
+        return {
+          id: item.id || `${index}-${item.text || item.label || 'item'}`,
+          text: item.text || item.label || '',
+        };
+      }
+
+      return null;
+    })
+    .filter((item) => item?.text);
+
+const parseDelimitedValues = (value = '') =>
+  String(value || '')
+    .split('|')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const parseMatchPairsFromText = (values = []) =>
+  (Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .map((entry, index) => {
+      const pair = entry.split(/\s*(?:->|=>|=|:|-)\s*/);
+      if (pair.length < 2) return null;
+
+      const left = pair.shift()?.trim();
+      const right = pair.join(' - ').trim();
+
+      if (!left || !right) return null;
+
+      return {
+        left: { id: `left-${index}-${left}`, text: left },
+        right: { id: `right-${index}-${right}`, text: right },
+      };
+    })
+    .filter(Boolean);
+
+const getMatchPreviewData = (question) => {
+  const metadata = question.metadata || {};
+  const leftItems = toPreviewItems(metadata.leftItems || metadata.matchLeft);
+  const rightItems = toPreviewItems(metadata.rightItems || metadata.matchRight);
+
+  if (leftItems.length || rightItems.length) {
+    return { leftItems, rightItems };
+  }
+
+  const optionPairs = parseMatchPairsFromText(question.options || []);
+  if (optionPairs.length) {
+    return {
+      leftItems: optionPairs.map((pair) => pair.left),
+      rightItems: optionPairs.map((pair) => pair.right),
+    };
+  }
+
+  const answerPairs = parseMatchPairsFromText(parseDelimitedValues(question.answer));
+  return {
+    leftItems: answerPairs.map((pair) => pair.left),
+    rightItems: answerPairs.map((pair) => pair.right),
+  };
+};
+
+const getDragDropPreviewItems = (question) => {
+  const metadata = question.metadata || {};
+  const directItems = toPreviewItems(metadata.items || metadata.dragItems);
+  if (directItems.length) return directItems;
+
+  const optionItems = toPreviewItems(question.options || []);
+  if (optionItems.length) return optionItems;
+
+  return toPreviewItems(parseDelimitedValues(question.answer));
+};
+
+const getFillBlankPreviewData = (question) => {
+  const metadata = question.metadata || {};
+  const previewText = buildBlankPreviewFromBackend(question)
+    || metadata.fillText
+    || metadata.text
+    || question.prompt
+    || '';
+
+  const blanks = toPreviewItems(metadata.blanks);
+  if (blanks.length) {
+    return { previewText, blanks };
+  }
+
+  return {
+    previewText,
+    blanks: toPreviewItems(parseDelimitedValues(question.answer)),
+  };
 };
 
 const sampleQuestionForType = (type, topicTitle = 'Programming Concepts') => {
@@ -276,6 +391,7 @@ export default function InstructorDashboard() {
   const [loadingStudentPerformance, setLoadingStudentPerformance] = useState(false);
 
   const showAlert = (title, text, icon = 'success') => Swal.fire({ title, text, icon, confirmButtonColor: '#14b8a6', background: isDark ? '#0a1220' : '#ffffff', color: isDark ? '#f8fafc' : '#0f172a' });
+  const hasStudentQuizAttempts = Boolean(studentPerformance?.stats?.hasQuizAttempts);
   
   const loadDashboard = async () => {
     try {
@@ -946,61 +1062,78 @@ export default function InstructorDashboard() {
                                 <div className="preview-card-head"><strong>{selectedCourseQuiz.title}</strong><span>{selectedCourseQuiz.topicTitle}</span></div>
                                 <div className="course-tags"><span>{QUESTION_TYPE_LABEL[selectedCourseQuiz.primaryType] || selectedCourseQuiz.primaryType}</span><span>{formatDifficultyLabel(selectedCourseQuiz.difficulty)}</span><span>{selectedCourseQuiz.status}</span></div>
                                 {(selectedCourseQuiz.questions || []).length > 0 ? (
-                                  (selectedCourseQuiz.questions || []).map((question, index) => (
-                                    <div key={question._id || `${selectedCourseQuiz._id}-${index}`} className="question-read-card">
-                                      <strong>{index + 1}. {question.prompt}</strong>
-                                      <p>{QUESTION_TYPE_LABEL[question.type]}</p>
-                                      <div className="course-tags"><span>{formatDifficultyLabel(question.difficulty || 'easy')}</span><span>{question.points || 10} pts</span></div>
-                                      {question.type === 'mcq' && (
-                                        <div className="preview-choice-list">
-                                          {(question.metadata?.options || question.options || []).map((option) => (
-                                            <div key={option.id || option} className="preview-choice">
-                                              <span>{option.text || option}</span>
+                                  (selectedCourseQuiz.questions || []).map((question, index) => {
+                                    const mcqOptions = toPreviewItems(question.metadata?.options || question.options || []);
+                                    const matchPreview = getMatchPreviewData(question);
+                                    const dragItems = getDragDropPreviewItems(question);
+                                    const fillBlankPreview = getFillBlankPreviewData(question);
+
+                                    return (
+                                      <div key={question._id || `${selectedCourseQuiz._id}-${index}`} className="question-read-card">
+                                        <strong>{index + 1}. {question.prompt || fillBlankPreview.previewText || 'Untitled question'}</strong>
+                                        <p>{QUESTION_TYPE_LABEL[question.type]}</p>
+                                        <div className="course-tags"><span>{formatDifficultyLabel(question.difficulty || 'easy')}</span><span>{question.points || 10} pts</span></div>
+                                        {question.type === 'mcq' && (
+                                          mcqOptions.length ? (
+                                            <div className="preview-choice-list">
+                                              {mcqOptions.map((option) => (
+                                                <div key={option.id} className="preview-choice">
+                                                  <span>{option.text}</span>
+                                                </div>
+                                              ))}
                                             </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {question.type === 'match' && (
-                                        <div className="preview-match-grid">
-                                          <div>
-                                            {(question.metadata?.leftItems || question.metadata?.matchLeft || []).map((item) => (
-                                              <div key={item.id} className="preview-pill">
-                                                {item.text}
+                                          ) : <div className="empty-state-box">No answer choices were saved for this MCQ yet.</div>
+                                        )}
+                                        {question.type === 'match' && (
+                                          matchPreview.leftItems.length || matchPreview.rightItems.length ? (
+                                            <div className="preview-match-grid">
+                                              <div>
+                                                {matchPreview.leftItems.map((item) => (
+                                                  <div key={item.id} className="preview-pill">
+                                                    {item.text}
+                                                  </div>
+                                                ))}
                                               </div>
-                                            ))}
-                                          </div>
-                                          <div>
-                                            {(question.metadata?.rightItems || question.metadata?.matchRight || []).map((item) => (
-                                              <div key={item.id} className="preview-pill alt">
-                                                {item.text}
+                                              <div>
+                                                {matchPreview.rightItems.map((item) => (
+                                                  <div key={item.id} className="preview-pill alt">
+                                                    {item.text}
+                                                  </div>
+                                                ))}
                                               </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {question.type === 'drag_drop' && (
-                                        <div className="preview-chip-row">
-                                          {(question.metadata?.items || question.metadata?.dragItems || []).map((item) => (
-                                            <div key={item.id} className="preview-pill">
-                                              {item.text}
                                             </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                      {question.type === 'fill_blank' && (
-                                        <div className="preview-fill-shell">
-                                          <p>{buildBlankPreviewFromBackend(question) || 'Blank preview here'}</p>
-                                          <div className="preview-chip-row">
-                                            {(question.metadata?.blanks || []).map((blank) => (
-                                              <div key={blank.id} className="preview-pill">
-                                                {blank.label}
+                                          ) : <div className="empty-state-box">No matching pairs were saved for this question yet.</div>
+                                        )}
+                                        {question.type === 'drag_drop' && (
+                                          dragItems.length ? (
+                                            <div className="preview-chip-row">
+                                              {dragItems.map((item) => (
+                                                <div key={item.id} className="preview-pill">
+                                                  {item.text}
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : <div className="empty-state-box">No drag-and-drop items were saved for this question yet.</div>
+                                        )}
+                                        {question.type === 'fill_blank' && (
+                                          <div className="preview-fill-shell">
+                                            <p>{fillBlankPreview.previewText || 'Blank preview here'}</p>
+                                            {fillBlankPreview.blanks.length ? (
+                                              <div className="preview-chip-row">
+                                                {fillBlankPreview.blanks.map((blank) => (
+                                                  <div key={blank.id} className="preview-pill">
+                                                    {blank.text}
+                                                  </div>
+                                                ))}
                                               </div>
-                                            ))}
+                                            ) : (
+                                              <div className="empty-state-box">No blank answers were saved for this question yet.</div>
+                                            )}
                                           </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))
+                                        )}
+                                      </div>
+                                    );
+                                  })
                                 ) : (
                                   <div className="empty-state-box">This quiz has no questions yet. Click "Edit Quiz" to add questions.</div>
                                 )}
@@ -1254,17 +1387,19 @@ export default function InstructorDashboard() {
                   <div className="table-wrap-clean">
                     <table className="clean-table">
                       <thead><tr><th>Name</th><th>Email</th><th>Enrolled Courses</th><th>Overall Score</th><th>Weak Topics</th><th>Last Active</th><th></th></tr></thead>
-                      <tbody>{filteredStudents.map((student) => (
-                        <tr key={student._id} style={{ cursor: 'pointer' }} onClick={() => student.enrolledCourses.length > 0 && loadStudentPerformance(student, data.courses.find(c => student.enrolledCourses.includes(c.title))?._id)}>
+                      <tbody>{filteredStudents.map((student) => {
+                        const performanceCourse = getStudentCourseForPerformance(student, courseId);
+                        return (
+                        <tr key={student._id} style={{ cursor: performanceCourse ? 'pointer' : 'default' }} onClick={() => performanceCourse && loadStudentPerformance(student, performanceCourse._id)}>
                           <td>{student.name}</td>
                           <td>{student.email}</td>
                           <td>{student.enrolledCourses.join(', ') || 'No courses yet'}</td>
                           <td>{student.overallScore}%</td>
                           <td>{student.weakTopics.join(', ')}</td>
                           <td>{formatDate(student.lastActive)}</td>
-                          <td>{student.enrolledCourses.length > 0 && <FiChevronRight size={18} color="#14b8a6" />}</td>
+                          <td>{performanceCourse && <FiChevronRight size={18} color="#14b8a6" />}</td>
                         </tr>
-                      ))}</tbody>
+                      )})}</tbody>
                     </table>
                   </div>
                 </>
@@ -1281,7 +1416,7 @@ export default function InstructorDashboard() {
                       <p>Loading performance data...</p>
                     </div>
                   ) : studentPerformance ? (
-                    <>
+                    <div className="content-grid">
                       {/* Student Header */}
                       <article className="panel panel-span-12" style={{ marginBottom: '20px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
@@ -1327,22 +1462,26 @@ export default function InstructorDashboard() {
                       <article className="panel panel-span-8">
                         <SectionHeader title="📊 Topic Mastery (Bar Chart)" subtitle="Shows score for each topic. Red = Weak (<60%), Green = Strong (>75%)" />
                         <div className="chart-frame">
-                          <ResponsiveContainer width="100%" height={350}>
-                            <BarChart data={studentPerformance.performance.topicAnalysis}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                              <XAxis dataKey="topicTitle" stroke="#94a3b8" angle={-45} textAnchor="end" height={100} />
-                              <YAxis stroke="#94a3b8" domain={[0, 100]} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', border: '1px solid #cbd5e1' }}
-                                formatter={(value) => `${value}%`}
-                              />
-                              <Bar 
-                                dataKey="score" 
-                                radius={[10, 10, 0, 0]}
-                                fill="#14b8a6"
-                              />
-                            </BarChart>
-                          </ResponsiveContainer>
+                          {studentPerformance.performance.topicAnalysis.length ? (
+                            <ResponsiveContainer width="100%" height={350}>
+                              <BarChart data={studentPerformance.performance.topicAnalysis}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                                <XAxis dataKey="topicTitle" stroke="#94a3b8" angle={-45} textAnchor="end" height={100} />
+                                <YAxis stroke="#94a3b8" domain={[0, 100]} />
+                                <Tooltip 
+                                  contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', border: '1px solid #cbd5e1' }}
+                                  formatter={(value) => `${value}%`}
+                                />
+                                <Bar 
+                                  dataKey="score" 
+                                  radius={[10, 10, 0, 0]}
+                                  fill="#14b8a6"
+                                />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="empty-state-box">No topic performance is available yet.</div>
+                          )}
                         </div>
                       </article>
 
@@ -1350,25 +1489,29 @@ export default function InstructorDashboard() {
                       <article className="panel panel-span-4">
                         <SectionHeader title="🥧 Topic Ratio (Pie Chart)" subtitle="Strong vs Weak vs Average distribution" />
                         <div className="chart-frame">
-                          <ResponsiveContainer width="100%" height={300}>
-                            <PieChart>
-                              <Pie
-                                data={studentPerformance.performance.pieChartData}
-                                cx="50%"
-                                cy="50%"
-                                labelLine={false}
-                                label={({ name, value }) => `${name}: ${value}`}
-                                outerRadius={100}
-                                fill="#8884d8"
-                                dataKey="value"
-                              >
-                                {studentPerformance.performance.pieChartData.map((entry, index) => (
-                                  <cell key={`cell-${index}`} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(value) => `${value} topics`} />
-                            </PieChart>
-                          </ResponsiveContainer>
+                          {studentPerformance.performance.pieChartData.length ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                              <PieChart>
+                                <Pie
+                                  data={studentPerformance.performance.pieChartData}
+                                  cx="50%"
+                                  cy="50%"
+                                  labelLine={false}
+                                  label={({ name, value }) => `${name}: ${value}`}
+                                  outerRadius={100}
+                                  fill="#8884d8"
+                                  dataKey="value"
+                                >
+                                  {studentPerformance.performance.pieChartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(value) => `${value} topics`} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="empty-state-box">No topic rating is available until the student attempts quizzes.</div>
+                          )}
                         </div>
                       </article>
 
@@ -1376,32 +1519,36 @@ export default function InstructorDashboard() {
                       <article className="panel panel-span-12">
                         <SectionHeader title="📈 Performance Progress (Line Chart)" subtitle="Student performance progression over quiz attempts" />
                         <div className="chart-frame">
-                          <ResponsiveContainer width="100%" height={300}>
-                            <LineChart data={studentPerformance.performance.timelineVisualization}>
-                              <defs>
-                                <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8}/>
-                                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
-                              <XAxis dataKey="label" stroke="#94a3b8" label={{ value: 'Quiz Attempt #', position: 'insideBottomRight', offset: -5 }} />
-                              <YAxis stroke="#94a3b8" domain={[0, 100]} label={{ value: 'Score (%)', angle: -90, position: 'insideLeft' }} />
-                              <Tooltip 
-                                contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', border: '1px solid #cbd5e1' }}
-                                formatter={(value) => `${value}%`}
-                                labelFormatter={(label) => `Attempt ${label}`}
-                              />
-                              <Line 
-                                type="monotone" 
-                                dataKey="score" 
-                                stroke="#14b8a6" 
-                                strokeWidth={2}
-                                dot={{ fill: '#14b8a6', r: 5 }}
-                                activeDot={{ r: 7 }}
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
+                          {studentPerformance.performance.timelineVisualization.length ? (
+                            <ResponsiveContainer width="100%" height={300}>
+                              <LineChart data={studentPerformance.performance.timelineVisualization}>
+                                <defs>
+                                  <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.8}/>
+                                    <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.16)" />
+                                <XAxis dataKey="label" stroke="#94a3b8" label={{ value: 'Quiz Attempt #', position: 'insideBottomRight', offset: -5 }} />
+                                <YAxis stroke="#94a3b8" domain={[0, 100]} label={{ value: 'Score (%)', angle: -90, position: 'insideLeft' }} />
+                                <Tooltip 
+                                  contentStyle={{ backgroundColor: isDark ? '#1e293b' : '#f8fafc', border: '1px solid #cbd5e1' }}
+                                  formatter={(value) => `${value}%`}
+                                  labelFormatter={(label) => `Attempt ${label}`}
+                                />
+                                <Line 
+                                  type="monotone" 
+                                  dataKey="score" 
+                                  stroke="#14b8a6" 
+                                  strokeWidth={2}
+                                  dot={{ fill: '#14b8a6', r: 5 }}
+                                  activeDot={{ r: 7 }}
+                                />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          ) : (
+                            <div className="empty-state-box">No performance progression is available until the student submits quiz attempts.</div>
+                          )}
                         </div>
                       </article>
 
@@ -1447,7 +1594,7 @@ export default function InstructorDashboard() {
                           </table>
                         </div>
                       </article>
-                    </>
+                    </div>
                   ) : null}
                 </motion.div>
               )}

@@ -40,6 +40,13 @@ const getWeakTopicsForStudent = (student, topicTitles) => {
   return weakTopics;
 };
 
+const getTopicStatusFromScore = (score = 0, attempts = 0) => {
+  if (!attempts) return 'not_started';
+  if (score > 75) return 'strong';
+  if (score < 60) return 'weak';
+  return 'average';
+};
+
 const getQuizTypeInfo = (quiz) => {
   const questionTypes = Array.isArray(quiz?.questions)
     ? [...new Set(quiz.questions.map((question) => question.type).filter(Boolean))]
@@ -199,30 +206,13 @@ exports.getStudentPerformance = async (req, res) => {
   try {
     const { studentId, courseId } = req.params;
     const instructorId = req.userId;
+    const instructorCourses = await Course.find({ instructor: instructorId }).lean();
+    const instructorCourseMap = new Map(instructorCourses.map((course) => [String(course._id), course]));
 
-    // Verify instructor owns the course
-    const course = await Course.findOne({
-      _id: courseId,
-      instructor: instructorId,
-    }).lean();
-
-    if (!course) {
+    if (!instructorCourseMap.size) {
       return res.status(404).json({
         success: false,
-        message: 'Course not found or you do not have access',
-      });
-    }
-
-    // Get enrollment with quiz results
-    const enrollment = await Enrollment.findOne({
-      student: studentId,
-      course: courseId,
-    }).lean();
-
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: 'Student not enrolled in this course',
+        message: 'No instructor courses found',
       });
     }
 
@@ -235,6 +225,49 @@ exports.getStudentPerformance = async (req, res) => {
       });
     }
 
+    const studentEnrollments = await Enrollment.find({
+      student: studentId,
+      course: { $in: [...instructorCourseMap.keys()] },
+    }).lean();
+
+    if (!studentEnrollments.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student is not enrolled in any of your courses',
+      });
+    }
+
+    const requestedEnrollment = studentEnrollments.find(
+      (enrollment) => String(enrollment.course) === String(courseId)
+    );
+
+    const bestEnrollment = [...studentEnrollments].sort((a, b) => {
+      const aAttempts = a.quizResults?.length || 0;
+      const bAttempts = b.quizResults?.length || 0;
+      if (bAttempts !== aAttempts) return bAttempts - aAttempts;
+
+      const aAccessed = new Date(a.lastAccessedAt || a.updatedAt || a.enrolledAt || 0).getTime();
+      const bAccessed = new Date(b.lastAccessedAt || b.updatedAt || b.enrolledAt || 0).getTime();
+      return bAccessed - aAccessed;
+    })[0];
+
+    const enrollment = requestedEnrollment?.quizResults?.length
+      ? requestedEnrollment
+      : bestEnrollment;
+
+    const course = instructorCourseMap.get(String(enrollment.course));
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found or you do not have access',
+      });
+    }
+
+    const topicTitleMap = new Map(
+      (course.topics || []).map((topic) => [String(topic._id), topic.title || 'Topic'])
+    );
+
     // Calculate topic-wise performance
     const topicPerformanceMap = new Map();
     const timelineData = [];
@@ -246,7 +279,7 @@ exports.getStudentPerformance = async (req, res) => {
 
         if (!topicPerformanceMap.has(topicId)) {
           topicPerformanceMap.set(topicId, {
-            topicTitle: result.topicTitle || 'Topic',
+            topicTitle: topicTitleMap.get(topicId) || result.topicTitle || 'Topic',
             scores: [],
             attempts: 0,
             status: score < 60 ? 'weak' : score > 75 ? 'strong' : 'average',
@@ -261,14 +294,20 @@ exports.getStudentPerformance = async (req, res) => {
         timelineData.push({
           date: new Date(result.completedAt),
           score,
-          topicTitle: result.topicTitle || 'Quiz',
+          topicTitle: topicTitleMap.get(topicId) || result.topicTitle || 'Quiz',
           quizTitle: result.quizTitle || 'Quiz',
         });
       });
     }
 
+    const courseTopics = (course.topics || []).map((topic) => ({
+      topicId: String(topic._id),
+      topicTitle: topic.title || 'Topic',
+    }));
+    const hasQuizAttempts = (enrollment.quizResults?.length || 0) > 0;
+
     // Convert to array and calculate averages
-    const topicAnalysis = Array.from(topicPerformanceMap.entries()).map(([topicId, data]) => ({
+    let topicAnalysis = Array.from(topicPerformanceMap.entries()).map(([topicId, data]) => ({
       topicId,
       topicTitle: data.topicTitle,
       score: Math.round(data.scores.reduce((a, b) => a + b, 0) / data.scores.length),
@@ -277,13 +316,28 @@ exports.getStudentPerformance = async (req, res) => {
       latestScore: data.scores[data.scores.length - 1] || 0,
     }));
 
+    if (!topicAnalysis.length && courseTopics.length) {
+      topicAnalysis = courseTopics.map((topic) => {
+        return {
+          topicId: topic.topicId,
+          topicTitle: topic.topicTitle,
+          score: 0,
+          attempts: 0,
+          status: 'not_started',
+          latestScore: 0,
+        };
+      });
+
+      topicAnalysis = topicAnalysis.sort((a, b) => a.topicTitle.localeCompare(b.topicTitle));
+    }
+
     // Sort by topic title
     topicAnalysis.sort((a, b) => a.topicTitle.localeCompare(b.topicTitle));
 
     // Calculate strength vs weakness ratio
-    const strongTopics = topicAnalysis.filter((t) => t.status === 'strong').length;
-    const weakTopics = topicAnalysis.filter((t) => t.status === 'weak').length;
-    const avgTopics = topicAnalysis.filter((t) => t.status === 'average').length;
+    const strongTopics = topicAnalysis.filter((t) => t.attempts > 0 && t.status === 'strong').length;
+    const weakTopics = topicAnalysis.filter((t) => t.attempts > 0 && t.status === 'weak').length;
+    const avgTopics = topicAnalysis.filter((t) => t.attempts > 0 && t.status === 'average').length;
 
     // Sort timeline by date
     timelineData.sort((a, b) => a.date - b.date);
@@ -297,9 +351,10 @@ exports.getStudentPerformance = async (req, res) => {
     }));
 
     // Calculate overall performance
+    const attemptedTopics = topicAnalysis.filter((topic) => topic.attempts > 0);
     const overallScore =
-      topicAnalysis.length > 0
-        ? Math.round(topicAnalysis.reduce((sum, t) => sum + t.score, 0) / topicAnalysis.length)
+      attemptedTopics.length > 0
+        ? Math.round(attemptedTopics.reduce((sum, t) => sum + t.score, 0) / attemptedTopics.length)
         : 0;
 
     // Pie chart data: Strong vs Weak vs Average
@@ -328,7 +383,9 @@ exports.getStudentPerformance = async (req, res) => {
         weakTopics,
         avgTopics,
         enrollmentProgress: enrollment.progress || 0,
+        hasQuizAttempts,
       },
+      selectedCourseChanged: String(enrollment.course) !== String(courseId),
       performance: {
         topicAnalysis,
         timelineVisualization,
@@ -396,24 +453,50 @@ exports.getDashboard = async (req, res) => {
         enrollmentByStudent.set(studentId, {
           student: enrollment.student,
           courses: [],
+          scores: [],
         });
       }
+      enrollmentByStudent.get(studentId).scores.push(
+        ...(enrollment.quizResults || []).map((result) => Number(result.score || 0))
+      );
       const course = courses.find((c) => String(c._id) === String(enrollment.course));
       if (course) {
         enrollmentByStudent.get(studentId).courses.push(course.title);
+        enrollmentByStudent.get(studentId).courseDetails = enrollmentByStudent.get(studentId).courseDetails || [];
+        enrollmentByStudent.get(studentId).courseDetails.push({
+          _id: course._id,
+          title: course.title,
+          quizAttempts: enrollment.quizResults?.length || 0,
+          progress: enrollment.progress || 0,
+          lastAccessedAt: enrollment.lastAccessedAt || enrollment.updatedAt || enrollment.enrolledAt || null,
+        });
       }
     });
 
-    const studentsTable = Array.from(enrollmentByStudent.values()).map((entry) => ({
-      _id: entry.student._id,
-      name: entry.student.name,
-      email: entry.student.email,
-      enrolledCourses: entry.courses,
-      overallScore: entry.student.performanceScore || 0,
-      weakTopics: getWeakTopicsForStudent(entry.student, topicTitles),
-      lastActive: entry.student.lastLoginAt,
-      isActive: entry.student.isActive,
-    }));
+    const studentsTable = Array.from(enrollmentByStudent.values()).map((entry) => {
+      const scores = entry.scores || [];
+      const overallScore = scores.length
+        ? Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+        : 0;
+
+      return {
+        _id: entry.student._id,
+        name: entry.student.name,
+        email: entry.student.email,
+        enrolledCourses: entry.courses,
+        enrolledCourseDetails: (entry.courseDetails || []).sort((a, b) => {
+          if ((b.quizAttempts || 0) !== (a.quizAttempts || 0)) {
+            return (b.quizAttempts || 0) - (a.quizAttempts || 0);
+          }
+
+          return new Date(b.lastAccessedAt || 0).getTime() - new Date(a.lastAccessedAt || 0).getTime();
+        }),
+        overallScore,
+        weakTopics: getWeakTopicsForStudent({ ...entry.student, performanceScore: overallScore }, topicTitles),
+        lastActive: entry.student.lastLoginAt,
+        isActive: entry.student.isActive,
+      };
+    });
 
     // Calculate average performance from actually enrolled students
     const averagePerformance = studentsTable.length

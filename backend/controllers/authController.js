@@ -2,18 +2,6 @@ const User = require('../models/User');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const getGeneratedPerformanceScore = (seed = '') => {
-  const normalizedSeed = String(seed).trim().toLowerCase();
-  let hash = 0;
-
-  for (let i = 0; i < normalizedSeed.length; i += 1) {
-    hash = (hash << 5) - hash + normalizedSeed.charCodeAt(i);
-    hash |= 0;
-  }
-
-  return 55 + Math.abs(hash % 41);
-};
-
 // Generate JWT Token
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'your-secret-key', {
@@ -56,7 +44,7 @@ exports.register = async (req, res) => {
         isActive: true 
       }).select('_id').lean();
       managedBy = instructor?._id || null;
-      performanceScore = getGeneratedPerformanceScore(normalizedEmail);
+      performanceScore = 0;
     }
 
     // Hash password

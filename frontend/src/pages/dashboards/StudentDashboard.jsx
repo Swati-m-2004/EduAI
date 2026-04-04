@@ -923,9 +923,14 @@ export default function StudentDashboard() {
                   onMarkVideoWatched={() => updateLessonState({ videoDone: true })}
                   onMarkNotesReviewed={() => updateLessonState({ notesDone: true })}
                   baselinePerformance={dashboardData?.student?.performanceScore ?? 0}
-                  onQuizCompletionChange={(completed) => {
-                    if (completed) {
-                      updateLessonState({ quizDone: true });
+                  onQuizCompletionChange={async (completed) => {
+                    if (!completed) return;
+
+                    updateLessonState({ quizDone: true });
+                    await loadDashboard({ keepLoader: true });
+
+                    if (courseDetails?._id) {
+                      await openCourseDetails(courseDetails._id, 'learn');
                     }
                   }}
                   onViewCourse={() => openCourseDetails(courseDetails?._id, 'course-detail')}

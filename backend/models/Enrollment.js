@@ -66,6 +66,7 @@ const enrollmentSchema = new mongoose.Schema(
     quizResults: {
       type: [{
         topicId: mongoose.Schema.Types.ObjectId,
+        topicTitle: String,
         quizTitle: String,
         score: Number, // percentage score (0-100)
         scoreOutOfTen: Number,
@@ -75,6 +76,16 @@ const enrollmentSchema = new mongoose.Schema(
           type: String,
           enum: ['easy', 'medium', 'hard'],
           default: 'easy',
+        },
+        timeTakenSeconds: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+        source: {
+          type: String,
+          default: 'quiz',
+          trim: true,
         },
         batchScores: [Number],
         completedAt: Date,

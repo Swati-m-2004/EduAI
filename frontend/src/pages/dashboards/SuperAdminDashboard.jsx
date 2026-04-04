@@ -42,6 +42,9 @@ const ROLE_LABELS = {
   instructor: 'Instructor',
 };
 
+const getRoleSpecificColumnLabel = (role) =>
+  role === 'instructor' ? 'Assigned Students' : 'Assigned Instructor';
+
 const ROLE_OPTIONS = [
   { label: 'All Users', value: 'all' },
   { label: 'Students', value: 'student' },
@@ -549,7 +552,7 @@ export default function SuperAdminDashboard() {
                       <th>Role</th>
                       <th>Registered</th>
                       <th>Status</th>
-                      <th>Managed By</th>
+                      <th>Assignment</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -579,7 +582,11 @@ export default function SuperAdminDashboard() {
                               {entry.isActive ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td>{entry.managedBy?.name || 'Not assigned'}</td>
+                          <td>
+                            {entry.role === 'instructor'
+                              ? `${entry.assignedStudentCount || 0} students`
+                              : entry.assignedInstructorName || 'Not assigned'}
+                          </td>
                           <td>
                             <div className="directory-actions">
                               <button onClick={() => handleViewUser(entry)} disabled={detailsLoading}>
@@ -715,21 +722,33 @@ export default function SuperAdminDashboard() {
                 <strong>{formatDate(selectedUser.user.createdAt)}</strong>
               </div>
               <div className="drawer-detail-card">
-                <span>Managed By</span>
-                <strong>{selectedUser.user.managedBy?.name || 'Not assigned'}</strong>
+                <span>{getRoleSpecificColumnLabel(selectedUser.user.role)}</span>
+                <strong>
+                  {selectedUser.user.role === 'instructor'
+                    ? `${selectedUser.summary?.assignedStudentCount || 0} students`
+                    : selectedUser.summary?.assignedInstructorName || 'Not assigned'}
+                </strong>
               </div>
               <div className="drawer-detail-card">
                 <span>Last Login</span>
                 <strong>{formatDateTime(selectedUser.user.lastLoginAt)}</strong>
               </div>
-              <div className="drawer-detail-card full">
-                <span>Performance</span>
-                <strong>
-                  {selectedUser.user.performanceScore != null
-                    ? `${selectedUser.user.performanceScore}%`
-                    : 'Not available'}
-                </strong>
-              </div>
+              {selectedUser.user.role === 'student' ? (
+                <div className="drawer-detail-card full">
+                  <span>Performance</span>
+                  <strong>
+                    {selectedUser.user.performanceScore != null
+                      ? `${selectedUser.user.performanceScore}%`
+                      : 'Not available'}
+                  </strong>
+                </div>
+              ) : null}
+              {selectedUser.user.role === 'instructor' ? (
+                <div className="drawer-detail-card full">
+                  <span>Active Assigned Students</span>
+                  <strong>{selectedUser.summary?.activeAssignedStudentCount || 0}</strong>
+                </div>
+              ) : null}
             </div>
 
             {selectedUser.user.role === 'instructor' && (

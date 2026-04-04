@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Course = require('../models/Course');
+const Enrollment = require('../models/Enrollment');
 
 const buildUserFilters = ({ search, role, status }) => {
   const filters = {
@@ -55,7 +57,7 @@ exports.getOverview = async (req, res) => {
     const todayStart = getDateBoundary(0);
     const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1);
 
-    const [users, totalUsers, roleCounts, activeStudentsToday, avgStudentPerformance, topAdmins, recentUsers, monthlyRegistrations] = await Promise.all([
+    const [users, totalUsers, roleCounts, activeStudentsToday, avgStudentPerformance, recentUsers, monthlyRegistrations, instructors, enrollments] = await Promise.all([
       User.find(filters)
         .select('name email role isActive createdAt managedBy performanceScore lastLoginAt')
         .populate('managedBy', 'name email')
@@ -96,66 +98,6 @@ exports.getOverview = async (req, res) => {
           },
         },
       ]),
-      User.aggregate([
-        {
-          $match: {
-            role: 'instructor',
-          },
-        },
-        {
-          $lookup: {
-            from: 'users',
-            let: { instructorId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$managedBy', '$$instructorId'] },
-                      { $eq: ['$role', 'student'] },
-                    ],
-                  },
-                },
-              },
-            ],
-            as: 'students',
-          },
-        },
-        {
-          $addFields: {
-            studentCount: { $size: '$students' },
-            activeStudentCount: {
-              $size: {
-                $filter: {
-                  input: '$students',
-                  as: 'student',
-                  cond: { $eq: ['$$student.isActive', true] },
-                },
-              },
-            },
-            averageStudentPerformance: {
-              $round: [{ $avg: '$students.performanceScore' }, 1],
-            },
-          },
-        },
-        {
-          $project: {
-            name: 1,
-            email: 1,
-            studentCount: 1,
-            activeStudentCount: 1,
-            averageStudentPerformance: { $ifNull: ['$averageStudentPerformance', 0] },
-            isActive: 1,
-            createdAt: 1,
-          },
-        },
-        {
-          $sort: {
-            averageStudentPerformance: -1,
-            studentCount: -1,
-          },
-        },
-      ]),
       User.find({ role: { $in: ['student', 'instructor'] } })
         .select('name role createdAt isActive')
         .sort({ createdAt: -1 })
@@ -166,6 +108,18 @@ exports.getOverview = async (req, res) => {
         createdAt: { $gte: monthStart },
       })
         .select('role createdAt')
+        .lean(),
+      User.find({ role: 'instructor' })
+        .select('name email isActive createdAt')
+        .lean(),
+      Enrollment.find({})
+        .select('student course')
+        .populate('student', 'isActive performanceScore')
+        .populate({
+          path: 'course',
+          select: 'instructor',
+          populate: { path: 'instructor', select: '_id' },
+        })
         .lean(),
     ]);
 
@@ -205,6 +159,83 @@ exports.getOverview = async (req, res) => {
       status: entry.isActive ? 'Active' : 'Inactive',
     }));
 
+    const instructorEnrollmentMap = new Map();
+
+    enrollments.forEach((entry) => {
+      const instructorId = entry.course?.instructor?._id || entry.course?.instructor;
+      const studentId = entry.student?._id || entry.student;
+
+      if (!instructorId || !studentId) return;
+
+      const mapKey = String(instructorId);
+
+      if (!instructorEnrollmentMap.has(mapKey)) {
+        instructorEnrollmentMap.set(mapKey, new Map());
+      }
+
+      const studentMap = instructorEnrollmentMap.get(mapKey);
+      studentMap.set(String(studentId), {
+        isActive: Boolean(entry.student?.isActive),
+        performanceScore: entry.student?.performanceScore,
+      });
+    });
+
+    const instructorStudentCountMap = new Map(
+      instructors.map((instructor) => {
+        const assignedStudents = Array.from(instructorEnrollmentMap.get(String(instructor._id))?.values() || []);
+        const averageStudentPerformance = assignedStudents.length
+          ? Math.round(
+              assignedStudents
+                .map((entry) => Number(entry.performanceScore || 0))
+                .reduce((sum, score) => sum + score, 0) / assignedStudents.length
+            )
+          : 0;
+
+        return [
+          String(instructor._id),
+          {
+            totalStudents: assignedStudents.length,
+            activeStudents: assignedStudents.filter((entry) => entry.isActive).length,
+            averageStudentPerformance,
+            name: instructor.name,
+            email: instructor.email,
+            isActive: instructor.isActive,
+            createdAt: instructor.createdAt,
+          },
+        ];
+      })
+    );
+
+    const topAdmins = Array.from(instructorStudentCountMap.entries())
+      .map(([instructorId, entry]) => ({
+        _id: instructorId,
+        name: entry.name,
+        email: entry.email,
+        studentCount: entry.totalStudents,
+        activeStudentCount: entry.activeStudents,
+        averageStudentPerformance: entry.averageStudentPerformance,
+        isActive: entry.isActive,
+        createdAt: entry.createdAt,
+      }))
+      .sort((a, b) => {
+        if (b.averageStudentPerformance !== a.averageStudentPerformance) {
+          return b.averageStudentPerformance - a.averageStudentPerformance;
+        }
+
+        return b.studentCount - a.studentCount;
+      });
+
+    const directoryUsers = users.map((entry) => {
+      const assigned = instructorStudentCountMap.get(String(entry._id)) || { totalStudents: 0, activeStudents: 0 };
+
+      return {
+        ...entry,
+        assignedInstructorName: entry.role === 'student' ? entry.managedBy?.name || 'Not assigned' : null,
+        assignedStudentCount: entry.role === 'instructor' ? assigned.totalStudents : 0,
+        activeAssignedStudentCount: entry.role === 'instructor' ? assigned.activeStudents : 0,
+      };
+    });
+
     res.status(200).json({
       success: true,
       stats: {
@@ -214,7 +245,7 @@ exports.getOverview = async (req, res) => {
         totalAdmins: counts.instructor,
         averagePlatformPerformance: Math.round(avgStudentPerformance[0]?.average || 0),
       },
-      users,
+      users: directoryUsers,
       pagination: {
         page,
         limit,
@@ -256,17 +287,41 @@ exports.getUserDetails = async (req, res) => {
     }
 
     let managedStudents = [];
+    let summary = null;
 
     if (user.role === 'instructor') {
-      managedStudents = await User.find({ managedBy: user._id, role: 'student' })
-        .select('name email isActive performanceScore createdAt')
-        .sort({ createdAt: -1 })
+      const instructorCourses = await Course.find({ instructor: user._id }).select('_id').lean();
+      const courseIds = instructorCourses.map((course) => course._id);
+      const enrollments = await Enrollment.find({ course: { $in: courseIds } })
+        .select('student')
+        .populate('student', 'name email isActive performanceScore createdAt')
         .lean();
+
+      const uniqueStudents = new Map();
+      enrollments.forEach((entry) => {
+        const student = entry.student;
+        if (student?._id) {
+          uniqueStudents.set(String(student._id), student);
+        }
+      });
+
+      managedStudents = Array.from(uniqueStudents.values())
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      summary = {
+        assignedStudentCount: managedStudents.length,
+        activeAssignedStudentCount: managedStudents.filter((entry) => entry.isActive).length,
+      };
+    } else {
+      summary = {
+        assignedInstructorName: user.managedBy?.name || 'Not assigned',
+      };
     }
 
     res.status(200).json({
       success: true,
       user,
+      summary,
       managedStudents,
     });
   } catch (error) {
