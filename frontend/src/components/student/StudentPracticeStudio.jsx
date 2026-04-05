@@ -32,6 +32,25 @@ const getFillAnswers = (question) => {
     .filter(Boolean);
 };
 
+const getFillBlankChoices = (question) => {
+  const wordBank = String(question?.metadata?.wordBankWords || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (wordBank.length) {
+    return [...new Set(wordBank)];
+  }
+
+  const blanks = Array.isArray(question?.metadata?.blanks) ? question.metadata.blanks : [];
+  return [...new Set(
+    blanks.flatMap((blank) => String(blank?.answersText || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean))
+  )];
+};
+
 const isAnswerCorrect = (question, selectedOption, fillAnswer) => {
   if (!question) return false;
 
@@ -91,6 +110,10 @@ export default function StudentPracticeStudio({ practice = {} }) {
   );
 
   const selectedQuestion = selectedQuiz?.questions?.[questionIndex] || null;
+  const fillBlankChoices = useMemo(
+    () => (selectedQuestion?.type === 'fill_blank' ? getFillBlankChoices(selectedQuestion) : []),
+    [selectedQuestion]
+  );
 
   useEffect(() => {
     setQuestionIndex(0);
@@ -204,7 +227,7 @@ export default function StudentPracticeStudio({ practice = {} }) {
                 </div>
 
                 <div className="practice-question-shell compact">
-                  <h4>{selectedQuestion.prompt || 'Untitled question'}</h4>
+                  <h4 className="question-text">{selectedQuestion.prompt || 'Untitled question'}</h4>
 
                   {selectedQuestion.type === 'mcq' ? (
                     <div className="practice-choice-list compact">
@@ -222,12 +245,22 @@ export default function StudentPracticeStudio({ practice = {} }) {
 
                   {selectedQuestion.type === 'fill_blank' ? (
                     <div className="practice-fill-card">
-                      <p>{getBlankPreview(selectedQuestion) || selectedQuestion.prompt}</p>
-                      <input
-                        value={fillAnswer}
-                        onChange={(event) => setFillAnswer(event.target.value)}
-                        placeholder="Type your answer here"
-                      />
+                      <p className="question-text">{getBlankPreview(selectedQuestion) || selectedQuestion.prompt}</p>
+                      <select value={fillAnswer} onChange={(event) => setFillAnswer(event.target.value)}>
+                        <option value="">Select an answer</option>
+                        {fillBlankChoices.map((choice) => (
+                          <option key={choice} value={choice}>
+                            {choice}
+                          </option>
+                        ))}
+                        {getFillAnswers(selectedQuestion)
+                          .filter((answer) => !fillBlankChoices.includes(answer))
+                          .map((answer) => (
+                            <option key={answer} value={answer}>
+                              {answer}
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   ) : null}
 

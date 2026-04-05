@@ -1,6 +1,7 @@
 import { FiArrowLeft, FiStar } from 'react-icons/fi';
 import CourseArtwork from './CourseArtwork';
 import SectionHeader from './SectionHeader';
+import StudentRatingForm from '../ratings/StudentRatingForm';
 
 export default function StudentCourseDetail({
   course,
@@ -9,8 +10,12 @@ export default function StudentCourseDetail({
   onEnroll,
   onStartLearning,
   onOpenMyCourses,
+  onRatingSubmitted,
   enrollLabel = 'Enroll Now',
 }) {
+  const progressValue = Number(course?.progress || 0);
+  const canRateCourse = Boolean(course?.enrolled) && (progressValue >= 100 || course?.completed || course?.isCompleted);
+
   return (
     <article className="panel panel-span-12">
       <SectionHeader
@@ -62,6 +67,19 @@ export default function StudentCourseDetail({
                   Open My Courses
                 </button>
               </div>
+              {canRateCourse && (
+                <div className="course-rating-section">
+                  <h4>Rate this completed course</h4>
+                  <p className="course-detail-copy" style={{ marginTop: '0', marginBottom: '12px' }}>
+                    Your rating and feedback will be saved for your instructor to review.
+                  </p>
+                  <StudentRatingForm 
+                    courseId={course._id} 
+                    onRatingSubmitted={onRatingSubmitted} 
+                  />
+                </div>
+              )}
+
               {!course.enrolled ? (
                 <p className="course-detail-copy" style={{ marginTop: '10px' }}>
                   {String(enrollLabel).includes('Free')
@@ -74,7 +92,7 @@ export default function StudentCourseDetail({
 
           <div className="student-course-outline">
             <SectionHeader title="Topics Overview" subtitle="Locked topics open as you progress through the course." />
-            <div className="topic-lock-list">
+            <div className="topic-lock-list">  
               {(course.topics || []).map((topic, index) => (
                 <div key={topic._id} className={`topic-lock-row ${topic.isLocked ? 'locked' : ''}`}>
                   <div>

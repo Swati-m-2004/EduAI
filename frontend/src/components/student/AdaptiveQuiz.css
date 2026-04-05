@@ -102,6 +102,9 @@
   color: #0f172a;
   margin: 0 0 24px 0;
   line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .question-content {
@@ -167,6 +170,9 @@
   color: #1e293b;
   font-size: 15px;
   transition: all 0.2s;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .practice-fill-card,
@@ -241,6 +247,9 @@
 .adaptive-answer-review p {
   margin: 0 0 8px;
   color: #334155;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .adaptive-quiz-container .empty-state-box {

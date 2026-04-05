@@ -63,6 +63,25 @@ const getBlankAnswerSets = (question) => {
     .filter((blank) => blank.answers.length);
 };
 
+const getFillBlankChoices = (question) => {
+  const wordBank = String(question?.metadata?.wordBankWords || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (wordBank.length) {
+    return [...new Set(wordBank)];
+  }
+
+  const blanks = Array.isArray(question?.metadata?.blanks) ? question.metadata.blanks : [];
+  return [...new Set(
+    blanks.flatMap((blank) => String(blank?.answersText || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean))
+  )];
+};
+
 const getMatchParts = (question) => ({
   leftItems: question.metadata?.matchLeft || question.metadata?.leftItems || [],
   rightItems: question.metadata?.matchRight || question.metadata?.rightItems || [],
@@ -180,6 +199,10 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
   const activeQuestion = questions[questionIndex] || null;
   const activeBlankSets = useMemo(
     () => (activeQuestion?.type === 'fill_blank' ? getBlankAnswerSets(activeQuestion) : []),
+    [activeQuestion]
+  );
+  const fillBlankChoices = useMemo(
+    () => (activeQuestion?.type === 'fill_blank' ? getFillBlankChoices(activeQuestion) : []),
     [activeQuestion]
   );
   const activeMatchParts = useMemo(
@@ -439,7 +462,7 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
                 </div>
               ) : (
                 <div className="practice-question-shell compact">
-                  <h4>{activeQuestion.prompt || 'Untitled question'}</h4>
+                  <h4 className="question-text">{activeQuestion.prompt || 'Untitled question'}</h4>
 
                   {activeQuestion.type === 'mcq' ? (
                     <div className="practice-choice-list compact">
@@ -465,7 +488,7 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
 
                   {activeQuestion.type === 'fill_blank' ? (
                     <div className="practice-fill-card">
-              <p>{getBlankPreview(activeQuestion) || activeQuestion.prompt}</p>
+              <p className="question-text">{getBlankPreview(activeQuestion) || activeQuestion.prompt}</p>
               <div className="practice-fill-grid">
                 {activeBlankSets.map((blank, index) => {
                   const submitted = fillAnswers[blank.id] || '';
@@ -478,15 +501,28 @@ export default function StudentTopicQuiz({ topic, courseId, baselinePerformance 
                   return (
                     <label key={blank.id} className="practice-fill-field">
                       <span>Blank {index + 1}</span>
-                      <input
+                      <select
                         value={submitted}
                         onChange={(event) => !revealed && setFillAnswers((current) => ({
                           ...current,
                           [blank.id]: event.target.value,
                         }))}
-                        placeholder={`Enter answer for blank ${index + 1}`}
                         className={revealed ? (isBlankCorrect ? 'input-correct' : 'input-incorrect') : ''}
-                      />
+                      >
+                        <option value="">Select an answer</option>
+                        {fillBlankChoices.map((choice) => (
+                          <option key={choice} value={choice}>
+                            {choice}
+                          </option>
+                        ))}
+                        {blank.answers
+                          .filter((answer) => !fillBlankChoices.includes(answer))
+                          .map((answer) => (
+                            <option key={answer} value={answer}>
+                              {answer}
+                            </option>
+                          ))}
+                      </select>
                     </label>
                   );
                 })}

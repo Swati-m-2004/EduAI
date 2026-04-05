@@ -78,6 +78,25 @@ const getBlankAnswerSets = (question) => {
     .filter((blank) => blank.answers.length);
 };
 
+const getFillBlankChoices = (question) => {
+  const wordBank = String(question?.metadata?.wordBankWords || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (wordBank.length) {
+    return [...new Set(wordBank)];
+  }
+
+  const blanks = Array.isArray(question?.metadata?.blanks) ? question.metadata.blanks : [];
+  return [...new Set(
+    blanks.flatMap((blank) => String(blank?.answersText || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean))
+  )];
+};
+
 const getMatchParts = (question) => ({
   leftItems: question?.metadata?.matchLeft || question?.metadata?.leftItems || [],
   rightItems: question?.metadata?.matchRight || question?.metadata?.rightItems || [],
@@ -388,6 +407,10 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
     () => (currentQuestion?.type === 'fill_blank' ? getBlankAnswerSets(currentQuestion) : []),
     [currentQuestion]
   );
+  const fillBlankChoices = useMemo(
+    () => (currentQuestion?.type === 'fill_blank' ? getFillBlankChoices(currentQuestion) : []),
+    [currentQuestion]
+  );
   const activeMatchParts = useMemo(
     () => (currentQuestion?.type === 'match' ? getMatchParts(currentQuestion) : { leftItems: [], rightItems: [], pairs: [] }),
     [currentQuestion]
@@ -664,15 +687,27 @@ export default function AdaptiveQuiz({ quiz, topic, course, courseId, topicId, o
                 {activeBlankSets.map((blank, index) => (
                   <label key={blank.id} className="practice-fill-field">
                     <span>Blank {index + 1}</span>
-                    <input
-                      type="text"
-                      placeholder={`Enter answer for blank ${index + 1}`}
+                    <select
                       value={fillAnswers[blank.id] || ''}
                       onChange={(event) => !revealed && setFillAnswers((current) => ({
                         ...current,
                         [blank.id]: event.target.value,
                       }))}
-                    />
+                    >
+                      <option value="">Select an answer</option>
+                      {fillBlankChoices.map((choice) => (
+                        <option key={choice} value={choice}>
+                          {choice}
+                        </option>
+                      ))}
+                      {blank.answers
+                        .filter((answer) => !fillBlankChoices.includes(answer))
+                        .map((answer) => (
+                          <option key={answer} value={answer}>
+                            {answer}
+                          </option>
+                        ))}
+                    </select>
                   </label>
                 ))}
               </div>

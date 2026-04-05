@@ -12,6 +12,7 @@ import {
   FiSearch,
   FiSettings,
   FiTarget,
+  FiStar,
   FiTrendingUp,
   FiZap,
 } from 'react-icons/fi';
@@ -47,6 +48,7 @@ import StudentCourseCard from '../../components/student/StudentCourseCard';
 import StudentCourseDetail from '../../components/student/StudentCourseDetail';
 import StudentLearningPanel from '../../components/student/StudentLearningPanel';
 import StudentPracticeStudio from '../../components/student/StudentPracticeStudio';
+import StudentRatingForm from '../../components/ratings/StudentRatingForm';
 import './Dashboard.css';
 import './StudentDashboard.css';
 
@@ -57,6 +59,7 @@ const SECTIONS = [
   { key: 'learn', label: 'Learning', icon: FiCheckCircle },
   { key: 'practice', label: 'Practice', icon: FiTarget },
   { key: 'performance', label: 'Performance', icon: FiBarChart2 },
+  { key: 'ratings', label: 'Ratings & Feedback', icon: FiStar },
   { key: 'assistant', label: 'AI Assistant', icon: FiCpu },
   { key: 'settings', label: 'Settings', icon: FiSettings },
 ];
@@ -91,6 +94,11 @@ const SECTION_META = {
     eyebrow: 'Progress Insights',
     title: 'See course performance and topic mastery without leaving the dashboard.',
     copy: 'Charts are powered by the student analytics response already available from the backend.',
+  },
+  ratings: {
+    eyebrow: 'Course Feedback',
+    title: 'Rate completed courses and leave notes that your instructor can review.',
+    copy: 'This section keeps your submitted ratings and feedback visible in one place before they appear in the instructor dashboard.',
   },
   assistant: {
     eyebrow: 'AI Ready',
@@ -866,6 +874,7 @@ export default function StudentDashboard() {
                 onEnroll={() => handleEnroll(courseDetails?._id)}
                 onStartLearning={() => handleContinueLearning(courseDetails?._id)}
                 onOpenMyCourses={() => setSection('my-courses')}
+                onRatingSubmitted={() => loadDashboard({ keepLoader: true })}
                 enrollLabel={getCourseCta(courseDetails).label}
               />
             </motion.section>
@@ -1126,6 +1135,56 @@ export default function StudentDashboard() {
                     <p style={{ color: '#94a3b8', margin: 0 }}>Complete quizzes to see areas for improvement.</p>
                   )}
                 </div>
+              </article>
+            </motion.section>
+          )}
+
+          {section === 'ratings' && (
+            <motion.section className="content-grid" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
+              <article className="panel panel-span-12">
+                <SectionHeader
+                  title="Ratings & Feedback"
+                  subtitle="Leave a rating after you finish a course so your instructor can review it."
+                />
+                <div className="student-course-grid browse-grid">
+                  {(dashboardData?.myCourses || []).map((course) => {
+                    const progressValue = Number(course?.progress || 0);
+                    const canRateCourse = progressValue >= 100 || course?.completed || course?.isCompleted;
+
+                    return (
+                      <div key={course._id} className="student-course-card browse-card">
+                        <div className="student-course-body">
+                          <div className="student-course-header">
+                            <div>
+                              <strong>{course.title}</strong>
+                              <p>{course.description}</p>
+                            </div>
+                          </div>
+
+                          <div className="student-course-meta">
+                            <span>{course.level}</span>
+                            <span>{progressValue}% complete</span>
+                            <span>{course.instructorName}</span>
+                          </div>
+
+                          {canRateCourse ? (
+                            <StudentRatingForm
+                              courseId={course._id}
+                              onRatingSubmitted={() => loadDashboard({ keepLoader: true })}
+                            />
+                          ) : (
+                            <div className="empty-state-box" style={{ marginTop: '12px' }}>
+                              Complete this course to unlock rating and feedback.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {!dashboardData?.myCourses?.length ? (
+                  <div className="empty-state-box">Enroll in a course first, then come back here to rate it.</div>
+                ) : null}
               </article>
             </motion.section>
           )}

@@ -1,4 +1,5 @@
 const Course = require('../models/Course');
+const Rating = require('../models/Rating');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 const mongoose = require('mongoose');
@@ -201,6 +202,126 @@ const getInstructorContext = async (userId) => {
 
   return { instructor, students, courses };
 };
+
+exports.getCourseRatings = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const course = await Course.findOne({ _id: courseId, instructor: req.userId });
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found or access denied',
+      });
+    }
+
+    const ratings = await Rating.find({ course: courseId })
+      .populate('student', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Calculate average rating
+    const ratingsCount = ratings.length;
+    const avgRating = ratingsCount > 0 
+      ? Number((ratings.reduce((sum, r) => sum + r.rating, 0) / ratingsCount).toFixed(1))
+      : 0;
+
+    res.status(200).json({
+      success: true,
+      course: {
+        _id: course._id,
+        title: course.title,
+      },
+      stats: {
+        avgRating,
+        ratingsCount,
+      },
+      ratings,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch ratings',
+    });
+  }
+};
+
+exports.getRatingsOverview = async (req, res) => {
+  try {
+    const courses = await Course.find({ instructor: req.userId })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    if (!courses.length) {
+      return res.status(200).json({
+        success: true,
+        totals: {
+          courses: 0,
+          ratings: 0,
+          averageRating: 0,
+        },
+        courseRatings: [],
+      });
+    }
+
+    const ratings = await Rating.find({ course: { $in: courses.map((course) => course._id) } })
+      .populate('student', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const ratingsByCourse = new Map();
+
+    ratings.forEach((rating) => {
+      const courseId = String(rating.course);
+      if (!ratingsByCourse.has(courseId)) {
+        ratingsByCourse.set(courseId, []);
+      }
+      ratingsByCourse.get(courseId).push(rating);
+    });
+
+    const courseRatings = courses.map((course) => {
+      const courseRatingsList = ratingsByCourse.get(String(course._id)) || [];
+      const ratingsCount = courseRatingsList.length;
+      const avgRating = ratingsCount > 0
+        ? Number((courseRatingsList.reduce((sum, item) => sum + item.rating, 0) / ratingsCount).toFixed(1))
+        : 0;
+
+      return {
+        course: {
+          _id: course._id,
+          title: course.title,
+          description: course.description,
+        },
+        stats: {
+          avgRating,
+          ratingsCount,
+        },
+        latestRatings: courseRatingsList.slice(0, 3),
+      };
+    });
+
+    const totalRatings = ratings.length;
+    const averageRating = totalRatings > 0
+      ? Number((ratings.reduce((sum, item) => sum + item.rating, 0) / totalRatings).toFixed(1))
+      : 0;
+
+    res.status(200).json({
+      success: true,
+      totals: {
+        courses: courses.length,
+        ratings: totalRatings,
+        averageRating,
+      },
+      courseRatings,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch ratings overview',
+    });
+  }
+};
+
 
 exports.getStudentPerformance = async (req, res) => {
   try {

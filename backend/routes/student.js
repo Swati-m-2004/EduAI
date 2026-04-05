@@ -7,6 +7,7 @@ const {
   updateProgress,
   saveQuizResult,
   verifyCoursePayment,
+  submitCourseRating,
 } = require('../controllers/studentController');
 const { isAuth, authorize } = require('../middleware/auth');
 
@@ -21,5 +22,6 @@ router.post('/courses/:courseId/payment-order', createPaymentOrder);
 router.post('/courses/:courseId/verify-payment', verifyCoursePayment);
 router.patch('/courses/:courseId/progress', updateProgress);
 router.post('/courses/:courseId/quiz-results', saveQuizResult);
+router.post('/courses/:courseId/rate', submitCourseRating);
 
 module.exports = router;

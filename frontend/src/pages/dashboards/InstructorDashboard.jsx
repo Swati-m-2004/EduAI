@@ -2,18 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Swal from 'sweetalert2';
-import { FiActivity, FiArrowLeft, FiBarChart2, FiBookOpen, FiChevronRight, FiExternalLink, FiFileText, FiGrid, FiLayers, FiPaperclip, FiPlus, FiSearch, FiSettings, FiTrendingUp, FiTrash2, FiUsers, FiVideo, FiX } from 'react-icons/fi';
+import { FiActivity, FiArrowLeft, FiBarChart2, FiBookOpen, FiChevronRight, FiExternalLink, FiFileText, FiGrid, FiLayers, FiPaperclip, FiPlus, FiSearch, FiSettings, FiStar, FiTrendingUp, FiTrash2, FiUsers, FiVideo, FiX } from 'react-icons/fi';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { authAPI, instructorAPI } from '../../services/api';
 import { useThemeStore } from '../../store/themeStore';
 import DashboardSidebar from '../../components/dashboard/DashboardSidebar';
 import MetricCard from '../../components/dashboard/MetricCard';
+import InstructorRatingsView from '../../components/ratings/InstructorRatingsView';
 import './Dashboard.css';
 import './InstructorDashboard.css';
 
 const SECTIONS = [
   { key: 'dashboard', label: 'Dashboard', icon: FiGrid },
   { key: 'courses', label: 'My Courses', icon: FiBookOpen },
+  { key: 'ratings', label: 'Ratings & Feedback', icon: FiStar },
   { key: 'create', label: 'Create Subject', icon: FiPlus },
   { key: 'topics', label: 'Topics & Content', icon: FiLayers },
   { key: 'quizzes', label: 'Quizzes', icon: FiActivity },
@@ -1601,6 +1603,18 @@ export default function InstructorDashboard() {
             </motion.section>
           )}
 
+          {section === 'ratings' && (
+            <motion.section className="content-grid" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} key="ratings">
+              <article className="panel panel-span-12">
+                <SectionHeader
+                  title="Ratings & Feedback"
+                  subtitle="Student reviews, comments, and course ratings for your subjects."
+                />
+                <InstructorRatingsView />
+              </article>
+            </motion.section>
+          )}
+
           {section === 'analytics' && (
             <motion.section className="content-grid" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} key="analytics">
               <article className="panel panel-span-6">
@@ -1617,6 +1631,7 @@ export default function InstructorDashboard() {
               </article>
             </motion.section>
           )}
+
 
           {section === 'settings' && (
             <motion.section className="content-grid" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} key="settings">

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const https = require('https');
 const Course = require('../models/Course');
 const Enrollment = require('../models/Enrollment');
+const Rating = require('../models/Rating');
 const User = require('../models/User');
 
 const QUESTION_LABELS = {
@@ -330,6 +331,69 @@ const buildPracticeLibrary = (course, unlockedTopics) => {
         }))
     );
 };
+
+exports.submitCourseRating = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    const { rating, feedback } = req.body;
+
+    // Validate input
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be an integer between 1 and 5',
+      });
+    }
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Course ID is required',
+      });
+    }
+
+    // Check enrollment and completion
+    const enrollment = await Enrollment.findOne({
+      student: req.userId,
+      course: courseId,
+      $or: [
+        { status: 'completed' },
+        { progress: { $gte: 100 } },
+      ],
+    });
+
+    if (!enrollment) {
+      return res.status(403).json({
+        success: false,
+        message: 'You must complete the course before rating it',
+      });
+    }
+
+    // Upsert rating (one per student per course)
+    const ratingDoc = await Rating.findOneAndUpdate(
+      { student: req.userId, course: courseId },
+      { 
+        student: req.userId, 
+        course: courseId, 
+        rating, 
+        feedback: feedback?.trim() || '' 
+      },
+      { upsert: true, new: true }
+    ).lean();
+
+    res.status(201).json({
+      success: true,
+      message: ratingDoc._id ? 'Rating updated successfully' : 'Rating submitted successfully',
+      rating: ratingDoc,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to submit rating',
+    });
+  }
+};
+
 
 const calculatePerformanceMetrics = (enrollments, courses) => {
   const coursePerformanceMap = new Map();

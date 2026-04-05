@@ -61,7 +61,20 @@ export const superAdminAPI = {
   deleteUser: (id) => apiClient.delete(`/super-admin/users/${id}`),
 };
 
+export const studentAPI = {
+  getDashboard: () => apiClient.get('/student/dashboard'),
+  getCourseDetails: (courseId) => apiClient.get(`/student/courses/${courseId}`),
+  enrollInCourse: (courseId) => apiClient.post(`/student/courses/${courseId}/enroll`),
+  createPaymentOrder: (courseId) => apiClient.post(`/student/courses/${courseId}/payment-order`),
+  verifyCoursePayment: (courseId, data) => apiClient.post(`/student/courses/${courseId}/verify-payment`, data),
+  updateProgress: (courseId, data) => apiClient.patch(`/student/courses/${courseId}/progress`, data),
+  saveQuizResult: (courseId, data) => apiClient.post(`/student/courses/${courseId}/quiz-results`, data),
+  submitCourseRating: (courseId, data) => apiClient.post(`/student/courses/${courseId}/rate`, data),
+};
+
 export const instructorAPI = {
+  getRatingsOverview: () => apiClient.get('/instructor/ratings'),
+  getCourseRatings: (courseId) => apiClient.get(`/instructor/courses/${courseId}/ratings`),  
   getDashboard: () => apiClient.get('/instructor/dashboard'),
   getStudentPerformance: (studentId, courseId) =>
     apiClient.get(`/instructor/students/${studentId}/courses/${courseId}/performance`),
@@ -77,16 +90,6 @@ export const instructorAPI = {
     apiClient.patch(`/instructor/courses/${courseId}/topics/${topicId}/quizzes/${quizId}`, data),
   deleteQuiz: (courseId, topicId, quizId) =>
     apiClient.delete(`/instructor/courses/${courseId}/topics/${topicId}/quizzes/${quizId}`),
-};
-
-export const studentAPI = {
-  getDashboard: () => apiClient.get('/student/dashboard'),
-  getCourseDetails: (courseId) => apiClient.get(`/student/courses/${courseId}`),
-  enrollInCourse: (courseId) => apiClient.post(`/student/courses/${courseId}/enroll`),
-  createPaymentOrder: (courseId) => apiClient.post(`/student/courses/${courseId}/payment-order`),
-  verifyCoursePayment: (courseId, data) => apiClient.post(`/student/courses/${courseId}/verify-payment`, data),
-  updateProgress: (courseId, data) => apiClient.patch(`/student/courses/${courseId}/progress`, data),
-  saveQuizResult: (courseId, data) => apiClient.post(`/student/courses/${courseId}/quiz-results`, data),
 };
 
 export default apiClient;
